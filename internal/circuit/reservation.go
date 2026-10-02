@@ -20,6 +20,7 @@ type Reservation struct {
 	Generation uint64    `json:"generation"`
 	ReservedAt time.Time `json:"reserved_at"`
 	Faulted    bool      `json:"faulted"`
+	FaultedAt  time.Time `json:"faulted_at,omitempty"`
 }
 
 type Manager struct {
@@ -79,7 +80,7 @@ func (m *Manager) Release(circuitID string, sessionID uuid.UUID) error {
 	return nil
 }
 
-func (m *Manager) RetainFault(circuitID string, sessionID uuid.UUID) error {
+func (m *Manager) RetainFault(circuitID string, sessionID uuid.UUID, now time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	current, ok := m.reservations[circuitID]
@@ -87,6 +88,9 @@ func (m *Manager) RetainFault(circuitID string, sessionID uuid.UUID) error {
 		return ErrReservationMismatch
 	}
 	current.Faulted = true
+	if current.FaultedAt.IsZero() {
+		current.FaultedAt = now.UTC()
+	}
 	m.reservations[circuitID] = current
 	return nil
 }

@@ -35,7 +35,7 @@ func (s *AbortService) Abort(ctx context.Context, sessionID uuid.UUID, reason st
 		return session, nil
 	}
 	if err := s.coordinator.routes.Close(ctx, session.ID); err != nil {
-		_ = s.coordinator.circuits.RetainFault(session.CircuitID, session.ID)
+		_ = s.coordinator.circuits.RetainFault(session.CircuitID, session.ID, s.now())
 		failed := session.Failed(reason+": "+err.Error(), s.now())
 		s.coordinator.sessions[session.ID] = failed
 		return failed, err

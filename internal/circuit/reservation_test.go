@@ -13,7 +13,7 @@ func TestFaultedReservationRequiresRecovery(t *testing.T) {
 	if _, err := manager.Reserve("C-A", "V-01", sessionID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.RetainFault("C-A", sessionID); err != nil {
+	if err := manager.RetainFault("C-A", sessionID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := manager.Release("C-A", sessionID); err == nil {

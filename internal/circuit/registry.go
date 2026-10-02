@@ -4,25 +4,34 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"time"
 )
 
 type Circuit struct {
-	ID       string  `json:"id"`
-	Zone     string  `json:"zone"`
-	ValveID  string  `json:"valve_id"`
-	Enabled  bool    `json:"enabled"`
-	Pressure float64 `json:"pressure_kpa"`
+	ID        string    `json:"id"`
+	Zone      string    `json:"zone"`
+	ValveID   string    `json:"valve_id"`
+	Enabled   bool      `json:"enabled"`
+	Pressure  float64   `json:"pressure_kpa"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Registry struct {
 	mu       sync.RWMutex
 	circuits map[string]Circuit
+	now      func() time.Time
 }
 
-func NewRegistry(circuits ...Circuit) *Registry {
-	r := &Registry{circuits: make(map[string]Circuit)}
+func NewRegistry(now func() time.Time, circuits ...Circuit) *Registry {
+	if now == nil {
+		now = time.Now
+	}
+	r := &Registry{circuits: make(map[string]Circuit), now: now}
 	for _, circuit := range circuits {
 		if circuit.ID != "" {
+			if circuit.UpdatedAt.IsZero() {
+				circuit.UpdatedAt = now().UTC()
+			}
 			r.circuits[circuit.ID] = circuit
 		}
 	}
@@ -67,6 +76,7 @@ func (r *Registry) SetEnabled(id string, enabled bool) error {
 		return errors.New("circuit not found")
 	}
 	circuit.Enabled = enabled
+	circuit.UpdatedAt = r.now().UTC()
 	r.circuits[id] = circuit
 	return nil
 }

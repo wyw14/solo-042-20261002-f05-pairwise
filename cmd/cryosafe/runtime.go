@@ -91,7 +91,7 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 	probeLifecycle := probe.NewLifecycle(probeRegistry, now)
 	snapshots := telemetry.NewSnapshotStore()
 	snapshots.Replace(vesselRegistry.List(), now())
-	ingestor := telemetry.NewIngestor(probeRegistry, vesselState, snapshots)
+	ingestor := telemetry.NewIngestor(probeRegistry, vesselState, snapshots, now)
 	subscriptions := telemetry.NewSubscriptionManager(probeRegistry, ingestor)
 	for _, item := range probeRegistry.List() {
 		if err := subscriptions.Start(item.ID); err != nil {
@@ -99,7 +99,7 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 		}
 	}
 	receiver := telemetry.NewReceiver(probeRegistry)
-	probeMonitor := monitor.NewProbeMonitor(probeRegistry, cfg.ProbeStaleAfter, now)
+	probeMonitor := monitor.NewProbeMonitor(probeRegistry, vesselRegistry, cfg.ProbeStaleAfter, cfg.ProbeStartupGrace, now)
 	if err := ingestor.AddObserver(probeMonitor.Observe); err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 		return nil, err
 	}
 
-	circuitRegistry := circuit.NewRegistry(
+	circuitRegistry := circuit.NewRegistry(now,
 		circuit.Circuit{ID: "C-A", Zone: "north", ValveID: "VALVE-A", Enabled: true},
 		circuit.Circuit{ID: "C-B", Zone: "south", ValveID: "VALVE-B", Enabled: true},
 	)

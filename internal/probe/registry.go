@@ -40,6 +40,18 @@ func (s *Subscription) Samples() <-chan model.Sample {
 	return s.ch
 }
 
+// Len reports how many samples are buffered waiting for a consumer.
+func (s *Subscription) Len() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.ch)
+}
+
+// Cap reports the maximum number of samples the buffer can hold.
+func (s *Subscription) Cap() int {
+	return cap(s.ch)
+}
+
 func (s *Subscription) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -105,6 +117,34 @@ func (r *Registry) Subscription(id string) (*Subscription, bool) {
 	defer r.mu.RUnlock()
 	subscription, ok := r.subscriptions[id]
 	return subscription, ok
+}
+
+// QueueDepth reports buffered-but-unconsumed samples for one probe and the
+// buffer capacity. A detached/unknown probe reports ok == false.
+func (r *Registry) QueueDepth(id string) (depth, capacity int, ok bool) {
+	r.mu.RLock()
+	subscription, exists := r.subscriptions[id]
+	r.mu.RUnlock()
+	if !exists {
+		return 0, 0, false
+	}
+	return subscription.Len(), subscription.Cap(), true
+}
+
+// QueueDepths returns probe ID -> buffered sample count for every live
+// subscription.
+func (r *Registry) QueueDepths() map[string]int {
+	r.mu.RLock()
+	subscriptions := make(map[string]*Subscription, len(r.subscriptions))
+	for id, subscription := range r.subscriptions {
+		subscriptions[id] = subscription
+	}
+	r.mu.RUnlock()
+	depths := make(map[string]int, len(subscriptions))
+	for id, subscription := range subscriptions {
+		depths[id] = subscription.Len()
+	}
+	return depths
 }
 
 func (r *Registry) Update(id string, apply func(model.Probe) (model.Probe, error)) (model.Probe, error) {

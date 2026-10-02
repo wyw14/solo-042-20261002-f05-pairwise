@@ -12,6 +12,7 @@ type config struct {
 	DataDir           string
 	ShutdownTimeout   time.Duration
 	ProbeStaleAfter   time.Duration
+	ProbeStartupGrace time.Duration
 	NotificationRetry time.Duration
 }
 
@@ -32,6 +33,7 @@ func loadConfig() (config, error) {
 		DataDir:           dataDir,
 		ShutdownTimeout:   10 * time.Second,
 		ProbeStaleAfter:   2 * time.Minute,
+		ProbeStartupGrace: 30 * time.Second,
 		NotificationRetry: 5 * time.Second,
 	}, nil
 }
