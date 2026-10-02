@@ -10,14 +10,25 @@ import (
 	"github.com/wyw14/cry-98/internal/vessel"
 )
 
+// ProbeStat captures per-probe ingest counters for zone-level backlog reporting.
+type ProbeStat struct {
+	Accepted   uint64    `json:"accepted"`
+	Dropped    uint64    `json:"dropped"`
+	LastDropAt time.Time `json:"last_drop_at,omitempty"`
+}
+
 type Ingestor struct {
-	probes    *probe.Registry
-	vessels   *vessel.StateService
-	snapshots *SnapshotStore
-	mu        sync.RWMutex
-	accepted  uint64
-	dropped   uint64
-	observers []func(model.Sample)
+	probes          *probe.Registry
+	vessels         *vessel.StateService
+	snapshots       *SnapshotStore
+	now             func() time.Time
+	mu              sync.RWMutex
+	accepted        uint64
+	dropped         uint64
+	acceptedByProbe map[string]uint64
+	droppedByProbe  map[string]uint64
+	lastDropAt      map[string]time.Time
+	observers       []func(model.Sample)
 }
 
 func (i *Ingestor) AddObserver(observer func(model.Sample)) error {
@@ -30,8 +41,19 @@ func (i *Ingestor) AddObserver(observer func(model.Sample)) error {
 	return nil
 }
 
-func NewIngestor(probes *probe.Registry, vessels *vessel.StateService, snapshots *SnapshotStore) *Ingestor {
-	return &Ingestor{probes: probes, vessels: vessels, snapshots: snapshots}
+func NewIngestor(probes *probe.Registry, vessels *vessel.StateService, snapshots *SnapshotStore, now func() time.Time) *Ingestor {
+	if now == nil {
+		now = time.Now
+	}
+	return &Ingestor{
+		probes:          probes,
+		vessels:         vessels,
+		snapshots:       snapshots,
+		now:             now,
+		acceptedByProbe: make(map[string]uint64),
+		droppedByProbe:  make(map[string]uint64),
+		lastDropAt:      make(map[string]time.Time),
+	}
 }
 
 func (i *Ingestor) Ingest(sample model.Sample) error {
@@ -42,6 +64,8 @@ func (i *Ingestor) Ingest(sample model.Sample) error {
 	if !probeState.Connected || sample.CalibrationEpoch != probeState.CalibrationEpoch || sample.BindingGeneration != probeState.BindingGeneration {
 		i.mu.Lock()
 		i.dropped++
+		i.droppedByProbe[sample.ProbeID]++
+		i.lastDropAt[sample.ProbeID] = i.now().UTC()
 		i.mu.Unlock()
 		return errors.New("sample belongs to an obsolete probe generation")
 	}
@@ -67,6 +91,7 @@ func (i *Ingestor) Ingest(sample model.Sample) error {
 	i.snapshots.Apply(updated)
 	i.mu.Lock()
 	i.accepted++
+	i.acceptedByProbe[sample.ProbeID]++
 	observers := append([]func(model.Sample){}, i.observers...)
 	i.mu.Unlock()
 	for _, observer := range observers {
@@ -79,6 +104,28 @@ func (i *Ingestor) Stats() (accepted, dropped uint64) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	return i.accepted, i.dropped
+}
+
+// ProbeStats returns a copy of the per-probe ingest counters keyed by probe id.
+func (i *Ingestor) ProbeStats() map[string]ProbeStat {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	ids := make(map[string]struct{}, len(i.acceptedByProbe)+len(i.droppedByProbe))
+	for id := range i.acceptedByProbe {
+		ids[id] = struct{}{}
+	}
+	for id := range i.droppedByProbe {
+		ids[id] = struct{}{}
+	}
+	stats := make(map[string]ProbeStat, len(ids))
+	for id := range ids {
+		stats[id] = ProbeStat{
+			Accepted:   i.acceptedByProbe[id],
+			Dropped:    i.droppedByProbe[id],
+			LastDropAt: i.lastDropAt[id],
+		}
+	}
+	return stats
 }
 
 func (i *Ingestor) Snapshot() Snapshot {
